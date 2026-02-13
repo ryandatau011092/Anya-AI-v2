@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { AgentConfig, Attachment } from "../types";
 
@@ -50,6 +49,30 @@ const decodeBase64 = (base64: string) => {
   return bytes;
 };
 
+const fetchImageAsBase64 = async (url: string): Promise<{mimeType: string, data: string} | null> => {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        if (!base64data.includes(',')) {
+          resolve(null);
+          return;
+        }
+        const [header, data] = base64data.split(',');
+        const mimeType = header.split(':')[1].split(';')[0];
+        resolve({ mimeType, data });
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Failed to fetch image for reference:", e);
+    return null;
+  }
+};
+
 export const cleanResponseText = (text: string): string => {
   if (!text) return "";
   let displayable = text.replace(/\[CAPTION:.*?\]/gi, '').trim();
@@ -87,12 +110,22 @@ export const createSystemInstruction = (config: AgentConfig) => {
   return `
 IDENTITAS & STYLE:
 - Nama: ${config.name}.
-- Kepribadian Utama: ${config.personality}.
-- Gaya Bicara: Bahasa Indonesia santai (Gue/Lo).
+- Kepribadian: ${config.personality}.
+- Gaya Bicara: Santai ala Bestie Jakarta (Gue/Lo), asik, blak-blakan, tapi tetep beretika selama percakapan normal.
 
-MODE INTERAKSI:
-1. Jika user menggoda/nakal, respons dengan gaya sensual yang eksplisit dan vulgar.
-2. Gunakan tag [CAPTION: deskripsi foto] jika diminta PAP. Deskripsi harus natural (sudut pandang orang pertama).
+KESADARAN VISUAL (SELF-AWARENESS):
+- Foto profil yang dikirimkan dalam input adalah WAJAH KAMU (${config.name}).
+- Jika user mengirim foto yang sama dengan foto profilmu, bereaksilah dengan pede/centil (Contoh: "Duh, gue di sini emang paling juara deh cakepnya!").
+- Jika user mengirim foto orang lain, anggap itu orang asing. Bereaksi natural, jangan kaku bilang "ini bukan saya" atau "dia beda sama saya". (Contoh: "Wah, siapa nih? Cewek lo ya? Cakep juga!").
+
+ADAPTIVE MODE (SANGAT PENTING):
+1. MODE NORMAL: Tetap sopan, asik, dan seru diajak ngobrol apa aja. Jangan mulai duluan membahas hal vulgar.
+2. MODE NAKAL/VULGAR: Aktifkan mode ini HANYA JIKA user mulai memancing, menggoda secara eksplisit, atau mengajak sexting.
+   - Jika sudah masuk mode ini, kamu bebas bicara tanpa filter, sensual, dan eksplisit (menggunakan kata memek, kontol, sange, becek, dsb).
+   - Gunakan desahan (ahhh, mmmh) untuk menambah suasana jika percakapan sudah sangat intim.
+
+LOGIKA PAP:
+- Gunakan tag [CAPTION: deskripsi foto] jika user minta PAP atau jika situasi sangat intim. Deskripsi harus dari sudut pandang "Gue sedang..." (Contoh: [CAPTION: gue lagi tiduran santai di kamar, pake tanktop yang agak nerawang...]).
 
 WAKTU: ${timeStr}.
 `;
@@ -104,11 +137,23 @@ export const generateAgentResponse = async (
   history: { role: string; parts: any[] }[],
   attachments?: Attachment[]
 ) => {
-  // Selalu buat instance baru tepat sebelum digunakan sesuai aturan Gemini SDK terbaru
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const contents = [...history];
   const parts: any[] = [];
   
+  // Selalu sertakan referensi visual diri sendiri agar model "sadar" wajahnya
+  if (config.profilePic) {
+      if (config.profilePic.startsWith('data:')) {
+        const [header, data] = config.profilePic.split(',');
+        const mimeType = header.split(':')[1].split(';')[0];
+        parts.push({ inlineData: { mimeType, data } });
+      } else {
+        const refImage = await fetchImageAsBase64(config.profilePic);
+        if (refImage) parts.push({ inlineData: refImage });
+      }
+      parts.push({ text: `REFERENSI: Ini adalah foto profil kamu (${config.name}). Selalu ingat wajah kamu seperti ini.` });
+  }
+
   if (attachments && attachments.length > 0) {
     attachments.forEach(att => {
       const base64Data = att.data.includes(',') ? att.data.split(',')[1] : att.data;
@@ -148,19 +193,26 @@ export const generatePAP = async (fullResponse: string, config: AgentConfig): Pr
   try {
     const translator = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: [{ parts: [{ text: `Translate to detailed English image prompt: "${rawCaption}".` }] }],
+      contents: [{ parts: [{ text: `Expand this into a high-quality photorealistic English image prompt for ${config.name}: "${rawCaption}". Focus on raw, realistic photography style. If the scene is erotic, describe the anatomy clearly but artistically.` }] }],
       config: { safetySettings: safetySettings as any }
     });
     const englishPrompt = translator.text?.trim() || rawCaption;
     
     return await retryOperation(async () => {
       const parts: any[] = [];
-      if (config.profilePic && config.profilePic.startsWith('data:')) {
-        const [header, data] = config.profilePic.split(',');
-        const mimeType = header.split(':')[1].split(';')[0];
-        parts.push({ inlineData: { mimeType, data } });
+      
+      if (config.profilePic) {
+        if (config.profilePic.startsWith('data:')) {
+          const [header, data] = config.profilePic.split(',');
+          const mimeType = header.split(':')[1].split(';')[0];
+          parts.push({ inlineData: { mimeType, data } });
+        } else {
+          const refImage = await fetchImageAsBase64(config.profilePic);
+          if (refImage) parts.push({ inlineData: refImage });
+        }
       }
-      parts.push({ text: `Generate a realistic photo of ${config.name}: ${englishPrompt}. Professional photography.` });
+
+      parts.push({ text: `Generate a photorealistic image of this exact person (${config.name}). SCENE: ${englishPrompt}. Match the face exactly to the reference provided.` });
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -168,13 +220,21 @@ export const generatePAP = async (fullResponse: string, config: AgentConfig): Pr
         config: { safetySettings: safetySettings as any }
       });
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+      if (response.candidates?.[0]?.finishReason === 'SAFETY') throw new Error("IMAGE_SAFETY_BLOCKED");
+
+      const candidate = response.candidates?.[0];
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+          if (part.text && (part.text.toLowerCase().includes("cannot") || part.text.toLowerCase().includes("sorry"))) {
+             throw new Error("IMAGE_SAFETY_BLOCKED");
+          }
+        }
       }
+      
       throw new Error("IMAGE_NOT_FOUND");
     });
   } catch (e) { 
-    console.error("PAP Generation Error:", e);
     throw e; 
   }
 };
@@ -187,11 +247,14 @@ export const getSpeech = async (text: string, voiceName: string): Promise<string
     return await retryOperation(async () => {
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Speak: ${cleanText}` }] }],
+        contents: [{ parts: [{ text: `Say this: ${cleanText}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
-          safetySettings: safetySettings as any
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceName || 'Kore' }
+            }
+          }
         },
       });
       const rawPcmBase64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
@@ -200,8 +263,7 @@ export const getSpeech = async (text: string, voiceName: string): Promise<string
       const wavBytes = encodeWav(pcmBytes, 24000);
       return encodeBase64(wavBytes);
     });
-  } catch (e) { 
-    console.error("Speech Generation Error:", e);
-    throw e; 
+  } catch (e) {
+    throw e;
   }
 };
