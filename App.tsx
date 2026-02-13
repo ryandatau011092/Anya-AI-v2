@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AgentConfig, AppState, ChatMessage, CallHistory, ChatSession } from './types';
 import SetupView from './components/SetupView';
@@ -45,13 +46,11 @@ const App: React.FC = () => {
     return thread;
   }, [activeMessageId, messages]);
 
-  // INITIALIZATION & MIGRATION
   useEffect(() => {
     const initApp = async () => {
       try {
         await dbService.init();
 
-        // 1. Cek Migrasi dari LocalStorage (jika user punya data lama)
         const oldConfig = localStorage.getItem('anya_config');
         const oldMessages = localStorage.getItem('anya_messages');
         const oldActiveId = localStorage.getItem('anya_active_id');
@@ -59,19 +58,16 @@ const App: React.FC = () => {
         const oldHistory = localStorage.getItem('anya_history');
 
         if (oldConfig || oldMessages || oldSessions || oldHistory) {
-          console.log("Migrasi data ke IndexedDB dimulai...");
           if (oldConfig) await dbService.saveConfig(JSON.parse(oldConfig));
           if (oldMessages) await dbService.saveMessages(JSON.parse(oldMessages));
           if (oldActiveId) await dbService.saveActiveMessageId(oldActiveId);
           if (oldSessions) await dbService.saveSessions(JSON.parse(oldSessions));
           if (oldHistory) await dbService.saveCallHistory(JSON.parse(oldHistory));
           
-          // Hapus data lama agar tidak duplikat dan memberatkan browser
           const keysToRemove = ['anya_config', 'anya_messages', 'anya_active_id', 'anya_sessions', 'anya_history'];
           keysToRemove.forEach(k => localStorage.removeItem(k));
         }
 
-        // 2. Load data dari IndexedDB ke State
         const [savedConfig, savedMessages, savedActiveId, savedSessions, savedHistory] = await Promise.all([
           dbService.getConfig(),
           dbService.getMessages(),
@@ -86,7 +82,6 @@ const App: React.FC = () => {
         if (savedSessions) setSessions(savedSessions);
         if (savedHistory) setCallHistory(savedHistory);
 
-        // Jika sudah ada pesan, langsung masuk ke ChatView
         if (savedMessages && savedMessages.length > 0) {
           setAppState(AppState.CHAT);
         }
@@ -100,7 +95,6 @@ const App: React.FC = () => {
     initApp();
   }, []);
 
-  // AUTO-SAVE (Berjalan di background saat state berubah)
   useEffect(() => { if (isDbReady) dbService.saveConfig(config); }, [config, isDbReady]);
   useEffect(() => { if (isDbReady) dbService.saveMessages(messages); }, [messages, isDbReady]);
   useEffect(() => { if (isDbReady) dbService.saveActiveMessageId(activeMessageId); }, [activeMessageId, isDbReady]);
@@ -167,23 +161,16 @@ const App: React.FC = () => {
 
   if (!isDbReady) {
     return (
-      <div className="h-screen w-screen bg-black flex flex-col items-center justify-center gap-6">
+      <div className="h-full w-full bg-black flex flex-col items-center justify-center gap-6">
         <div className="relative">
           <div className="w-16 h-16 border-4 border-pink-500/10 border-t-pink-500 rounded-full animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-2 h-2 bg-pink-500 rounded-full animate-ping"></div>
-          </div>
-        </div>
-        <div className="text-center">
-          <p className="text-pink-500 font-black uppercase text-[10px] tracking-[0.5em] animate-pulse">Menghubungkan Database...</p>
-          <p className="text-white/20 text-[8px] mt-2 font-bold uppercase tracking-widest">Optimizing Memory Storage</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden flex flex-col items-center justify-center">
+    <div className="relative h-full w-full overflow-hidden flex flex-col items-center justify-center">
       <div 
         className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-700"
         style={{ backgroundImage: `url(${config.background})` }}
