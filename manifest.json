@@ -4,13 +4,13 @@
   "name": "Anya AI Voice Agent",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1698/1698535.png",
-      "type": "image/png",
+      "src": "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?q=80&w=192&h=192&fit=crop",
+      "type": "image/jpeg",
       "sizes": "192x192"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1698/1698535.png",
-      "type": "image/png",
+      "src": "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?q=80&w=512&h=512&fit=crop",
+      "type": "image/jpeg",
       "sizes": "512x512"
     }
   ],
