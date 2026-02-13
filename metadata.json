@@ -1,0 +1,8 @@
+{
+  "name": "Anya AI Flexible Voice Agent v2.5",
+  "description": "High-performance customizable Voice Agent with PWA support and Real-time Gemini 2.5 connectivity.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
