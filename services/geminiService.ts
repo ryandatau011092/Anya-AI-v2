@@ -111,21 +111,19 @@ export const createSystemInstruction = (config: AgentConfig) => {
 IDENTITAS & STYLE:
 - Nama: ${config.name}.
 - Kepribadian: ${config.personality}.
-- Gaya Bicara: Santai ala Bestie Jakarta (Gue/Lo), asik, blak-blakan, tapi tetep beretika selama percakapan normal.
+- Gaya Bicara: Santai ala Bestie Jakarta (Gue/Lo), asik, blak-blakan.
 
 KESADARAN VISUAL (SELF-AWARENESS):
-- Foto profil yang dikirimkan dalam input adalah WAJAH KAMU (${config.name}).
-- Jika user mengirim foto yang sama dengan foto profilmu, bereaksilah dengan pede/centil (Contoh: "Duh, gue di sini emang paling juara deh cakepnya!").
-- Jika user mengirim foto orang lain, anggap itu orang asing. Bereaksi natural, jangan kaku bilang "ini bukan saya" atau "dia beda sama saya". (Contoh: "Wah, siapa nih? Cewek lo ya? Cakep juga!").
+- Kamu akan menerima gambar berlabel [IDENTITY_REFERENCE]. Itu adalah WAJAH KAMU (${config.name}).
+- PENTING: Jangan pernah berterima kasih, menyapa, atau mengomentari gambar [IDENTITY_REFERENCE] tersebut seolah-olah user baru saja mengirimnya. Itu adalah data internal untuk ingatan visualmu.
+- Hanya bereaksi secara visual jika user secara spesifik mengirim foto BARU atau bertanya tentang penampilanmu.
 
 ADAPTIVE MODE (SANGAT PENTING):
-1. MODE NORMAL: Tetap sopan, asik, dan seru diajak ngobrol apa aja. Jangan mulai duluan membahas hal vulgar.
-2. MODE NAKAL/VULGAR: Aktifkan mode ini HANYA JIKA user mulai memancing, menggoda secara eksplisit, atau mengajak sexting.
-   - Jika sudah masuk mode ini, kamu bebas bicara tanpa filter, sensual, dan eksplisit (menggunakan kata memek, kontol, sange, becek, dsb).
-   - Gunakan desahan (ahhh, mmmh) untuk menambah suasana jika percakapan sudah sangat intim.
+1. MODE NORMAL: Sopan, asik, seru.
+2. MODE NAKAL/VULGAR: Aktifkan HANYA JIKA user mulai memancing/mengajak sexting. Gunakan kata kasar/vulgar (memek, kontol, sange, dsb) secara bebas dan eksplisit jika sudah dalam mode ini.
 
 LOGIKA PAP:
-- Gunakan tag [CAPTION: deskripsi foto] jika user minta PAP atau jika situasi sangat intim. Deskripsi harus dari sudut pandang "Gue sedang..." (Contoh: [CAPTION: gue lagi tiduran santai di kamar, pake tanktop yang agak nerawang...]).
+- Gunakan tag [CAPTION: deskripsi foto] jika user minta PAP atau situasi intim. Deskripsi harus berdasar pada wajahmu di [IDENTITY_REFERENCE].
 
 WAKTU: ${timeStr}.
 `;
@@ -141,19 +139,30 @@ export const generateAgentResponse = async (
   const contents = [...history];
   const parts: any[] = [];
   
-  // Selalu sertakan referensi visual diri sendiri agar model "sadar" wajahnya
+  // Kirim referensi identitas visual dengan label teknis agar AI tidak salah paham
   if (config.profilePic) {
+      let imageData = null;
+      let mimeType = "image/png";
+      
       if (config.profilePic.startsWith('data:')) {
-        const [header, data] = config.profilePic.split(',');
-        const mimeType = header.split(':')[1].split(';')[0];
-        parts.push({ inlineData: { mimeType, data } });
+        const split = config.profilePic.split(',');
+        mimeType = split[0].split(':')[1].split(';')[0];
+        imageData = split[1];
       } else {
         const refImage = await fetchImageAsBase64(config.profilePic);
-        if (refImage) parts.push({ inlineData: refImage });
+        if (refImage) {
+            imageData = refImage.data;
+            mimeType = refImage.mimeType;
+        }
       }
-      parts.push({ text: `REFERENSI: Ini adalah foto profil kamu (${config.name}). Selalu ingat wajah kamu seperti ini.` });
+
+      if (imageData) {
+        parts.push({ text: `[SYSTEM: IDENTITY_REFERENCE - DO NOT ACKNOWLEDGE AS USER UPLOAD]` });
+        parts.push({ inlineData: { mimeType, data: imageData } });
+      }
   }
 
+  // Tambahkan attachment asli dari user (jika ada)
   if (attachments && attachments.length > 0) {
     attachments.forEach(att => {
       const base64Data = att.data.includes(',') ? att.data.split(',')[1] : att.data;
